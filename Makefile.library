@@ -1,0 +1,45 @@
+# Copyright 2017-2018 Oticon A/S
+# SPDX-License-Identifier: Apache-2.0
+
+BSIM_BASE_PATH?=$(abspath ../ )
+include ${BSIM_BASE_PATH}/common/pre.make.inc
+
+unexport 
+
+SOURCE_LIB_FOLDER:=$(abspath ${COMPONENT_OUTPUT_DIR}/source-1.0.2g )
+SOURCE_LIB_TAR:=source-1.0.2g.tar.gz
+
+LIB_CRYPTO:=libcrypto.a
+
+all: install
+
+.PHONY: all install compile lib clean clean_all
+
+compile: ${SOURCE_LIB_FOLDER}/${LIB_CRYPTO}
+
+lib : ${SOURCE_LIB_FOLDER}/${LIB_CRYPTO}
+
+.INTERMEDIATE: ${SOURCE_LIB_FOLDER}  ${SOURCE_LIB_FOLDER}/${LIB_CRYPTO}
+
+${SOURCE_LIB_FOLDER}/${LIB_CRYPTO}: ${SOURCE_LIB_FOLDER}
+	@echo "Compiling..."
+	@echo "This is silent on purpose... (if you have some problem compiling it, run these by hand:"
+	cd ${SOURCE_LIB_FOLDER} && setarch i386 ./config -m32 -g -fPIC >& /dev/null && make MAKEFLAGS= depend &> /dev/null && make MAKEFLAGS= build_libcrypto &> /dev/null 
+	@echo "Done with the crypto library.. continuing"
+
+${SOURCE_LIB_FOLDER}: ${SOURCE_LIB_TAR}
+	@echo "Seems this is the first time you compile this BabbleSim with this libCrypto component (or the component has been updated), it will be compiled now (expect 1 minute)"
+	@echo "Unpacking source files..."
+	@if [ ! -d ${COMPONENT_OUTPUT_DIR} ]; then mkdir -p ${COMPONENT_OUTPUT_DIR}; fi
+	@tar xfz ${SOURCE_LIB_TAR} --directory ${COMPONENT_OUTPUT_DIR}/
+
+${COMPONENT_OUTPUT_DIR}/${LIB_CRYPTO}: ${SOURCE_LIB_FOLDER}/${LIB_CRYPTO}
+	@cp ${SOURCE_LIB_FOLDER}/${LIB_CRYPTO} ${COMPONENT_OUTPUT_DIR}/
+	@rm ${SOURCE_LIB_FOLDER}/ -r
+
+install: ${COMPONENT_OUTPUT_DIR}/${LIB_CRYPTO}
+
+clean:
+	rm ${SOURCE_LIB_FOLDER} -r &> /dev/null; true
+
+clean_all: clean

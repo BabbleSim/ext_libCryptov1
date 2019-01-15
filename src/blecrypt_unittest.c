@@ -54,7 +54,7 @@ static void test_session_key_calc(
     const uint8_t *ltk,
     const uint8_t *expected_sk, // little-endian here
     // Outputs (the pointers themselves are inputs and must point to large enough areas)
-    uint8_t *sk) // session key is big-endian for OpenSSL
+    uint8_t *sk) // session key is big-endian
 {
     uint8_t sk_le[KEY_LEN];
 
@@ -103,7 +103,7 @@ static void test_packet_encryption(
     blecrypt_packet_direction_t packet_direction,
     uint64_t packet_counter,
     const uint8_t *iv,
-    const uint8_t *sk) // session key is big-endian for OpenSSL
+    const uint8_t *sk) // session key is big-endian
 {
     // Set up variables
     uint8_t packet_1st_header_byte = expected_encrypted_packet[0];
@@ -139,7 +139,7 @@ static void test_packet_decryption(
     blecrypt_packet_direction_t packet_direction,
     uint64_t packet_counter,
     const uint8_t *iv,
-    const uint8_t *sk, // session key is big-endian for OpenSSL
+    const uint8_t *sk, // session key is big-endian
     int no_mic)
 {
     // Set up variables
@@ -285,7 +285,7 @@ int main(int argc, char *argv[])
     // IV - initialization vector
     uint8_t iv[IV_LEN];
     // SK - session key (this is the CCM key used to encrypt BLE packets)
-    uint8_t sk[KEY_LEN]; // sk is big-endian for OpenSSL
+    uint8_t sk[KEY_LEN]; // sk is big-endian
 
     // Calculate SKD by concatenating SKDm and SKDs (master and slave contributions)
     memcpy(skd, ref_skd_m, SKD_LEN/2);

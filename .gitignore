@@ -1,5 +1,14 @@
-source-1.*/*
+*.a
 *.d
 *.o
-*.a
 *.so
+*~
+*.Tsymbols
+*.gcda
+*.gcno
+*~
+~*.~*
+.project
+.cproject
+.pydevproject
+.settings/*

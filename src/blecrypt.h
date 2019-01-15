@@ -7,7 +7,7 @@
 #define BLECRYPT_H
 
 // This file provides an API for BLE packet encryption/decryption using the
-// OpenSSL library.
+// TinyCrypt library.
 
 #include <stdint.h>
 

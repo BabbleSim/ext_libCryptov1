@@ -31,7 +31,7 @@ void blecrypt_aes_128(
     // Encrypt plaintext data and put result in encrypted_data_be and length in outlen
     int outlen;
     EVP_EncryptUpdate(ctx, encrypted_data_be, &outlen, plaintext_data_be, SKD_LEN);
-    // Free cypher context
+    // Free cipher context
     EVP_CIPHER_CTX_free(ctx);
 }
 
@@ -47,15 +47,76 @@ void blecrypt_packet_encrypt(
     // Outputs (the pointers themselves are inputs and must point to large enough areas)
     uint8_t *encrypted_packet_payload_and_mic)      // Resulting encrypted payload with MIC appended (packet_payload_len + MIC_LEN bytes)
 {
+    // Set additional authenticated data (AAD) to first byte of packet header with NESN = SN = MD = 0
+    uint8_t aad = packet_1st_header_byte & 0xE3;
+    blecrypt_packet_encrypt_v2(aad,
+                               packet_payload_len,
+                               packet_payload,
+                               sk,
+                               ccm_nonce,
+                               encrypted_packet_payload_and_mic);
+}
+
+// Decrypt payload of one packet and checks MIC (if present).
+// Encrypted and unencrypted packet payloads must reside at different (non-overlapping) locations.
+int blecrypt_packet_decrypt(                        // Returns 1 if MIC is ok, else 0
+    // Inputs
+    uint8_t packet_1st_header_byte,                 // First byte of packet header (or just LLID and RFU (RFU=0 for BLE v4.x) - other bits are ignored)
+    uint8_t packet_payload_len,                     // Packet payload length (not including header and MIC)
+    const uint8_t *packet_payload_and_mic,          // Packet payload (with MIC if any) to be decrypted (packet_payload_len (+ MIC_LEN) bytes)
+    const uint8_t *sk,                              // Session key (KEY_LEN bytes, BIG-ENDIAN)
+    const uint8_t *ccm_nonce,                       // CCM Nonce (NONCE_LEN bytes, little-endian)
+    int no_mic,                                     // 1 if packet to be decrypted does not include a MIC, otherwise 0
+    // Outputs (the pointers themselves are inputs and must point to large enough areas)
+    uint8_t *decrypted_packet_payload)              // Resulting decrypted payload (packet_payload_len bytes)
+{
+    // Set additional authenticated data (AAD) to first byte of packet header with NESN = SN = MD = 0
+    uint8_t aad = packet_1st_header_byte & 0xE3;
+    return blecrypt_packet_decrypt_v2(aad,
+                                      packet_payload_len,
+                                      packet_payload_and_mic,
+                                      sk,
+                                      ccm_nonce,
+                                      no_mic,
+                                      decrypted_packet_payload);
+}
+
+/**
+ * Encrypt a BLE packet payload and append the MIC,
+ * as per Bluetooth Core Specification Version 5.3 | Vol 6, Part E
+ *
+ * In comparison to blecrypt_packet_encrypt()
+ * this version is adapted to not apply the BT 4.2 AAD mask,
+ * but leave it to the caller, to be more transparent as to how the mask is meant to be applied
+ * for newer standard versions.
+ *
+ * \note Encrypted and unencrypted packet payloads must reside at different (non-overlapping) locations.
+ *
+ * \param[in] aad  Additional Authentication Data: First byte of packet header after applying the bit mask
+ *                 Note: For BT 4.2 this is 0xE3. For 5.2 it depends on the packet type.
+ * \param[in] packet_payload_len  Input packet payload length (i.e. not including header and MIC)
+ * \param[in] packet_payload  Pointer to the packet payload to be encrypted (buffer must contain packet_payload_len bytes)
+ * \param[in] sk  Session key (KEY_LEN bytes, BIG-ENDIAN)
+ * \param[in] ccm_nonce  CCM Nonce (NONCE_LEN bytes, little-endian)
+ *
+ * \param[out] encrypted_packet_payload_and_mic Pointer to a buffer where the resulting encrypted payload with MIC appended will be stored
+ *             (packet_payload_len + MIC_LEN bytes). The caller must allocate it.
+ */
+void blecrypt_packet_encrypt_v2(
+    uint8_t aad,
+    int packet_payload_len,
+    const uint8_t *packet_payload,
+    const uint8_t *sk,
+    const uint8_t *ccm_nonce,
+    uint8_t *encrypted_packet_payload_and_mic)
+{
     int outlen;
     // Set plaintext pointer to start of input packet payload
     const uint8_t *pt = packet_payload;
-    // Set cyphertext pointer to start of encrypted packet payload
+    // Set ciphertext pointer to start of encrypted packet payload
     uint8_t *ct = encrypted_packet_payload_and_mic;
-    // Set additional authenticated data (AAD) to first byte of packet header with NESN = SN = MD = 0
-    uint8_t aad = packet_1st_header_byte & 0xE3;
-    int aad_len = 1;
-    // Allocate new cypher context
+    const int aad_len = 1; //Length of the Additional Authentication Data as per BT spec
+    // Allocate new cipher context
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     // Set cipher type to 128-bit AES, and mode to CCM (Counter with CBC-MAC)
     EVP_EncryptInit_ex(ctx, EVP_aes_128_ccm(), NULL, NULL, NULL);
@@ -77,35 +138,54 @@ void blecrypt_packet_encrypt(
     EVP_CIPHER_CTX_free(ctx);
 }
 
-// Decrypts payload of one packet and checks MIC (if present).
-// Encrypted and unencrypted packet payloads must reside at different (non-overlapping) locations.
-int blecrypt_packet_decrypt(                        // Returns 1 if MIC is ok, else 0
-    // Inputs
-    uint8_t packet_1st_header_byte,                 // First byte of packet header (or just LLID and RFU (RFU=0 for BLE v4.x) - other bits are ignored)
-    uint8_t packet_payload_len,                     // Packet payload length (not including header and MIC)
-    const uint8_t *packet_payload_and_mic,          // Packet payload (with MIC if any) to be decrypted (packet_payload_len (+ MIC_LEN) bytes)
-    const uint8_t *sk,                              // Session key (KEY_LEN bytes, BIG-ENDIAN)
-    const uint8_t *ccm_nonce,                       // CCM Nonce (NONCE_LEN bytes, little-endian)
-    int no_mic,                                     // 1 if packet to be decrypted does not include a MIC, otherwise 0 
-    // Outputs (the pointers themselves are inputs and must point to large enough areas)
-    uint8_t *decrypted_packet_payload)              // Resulting decrypted payload (packet_payload_len bytes)
+/**
+ * Decrypt a BLE packet payload and check the MIC (if present)
+ * as per Bluetooth Core Specification Version 5.3 | Vol 6, Part E
+ *
+ * In comparison to blecrypt_packet_decrypt()
+ * this version is adapted to not apply the BT 4.2 AAD mask,
+ * but leave it to the caller, to be more transparent as to how the mask is meant to be applied
+ * for newer standard versions.
+ *
+ * \note Encrypted and unencrypted packet payloads must reside at different (non-overlapping) locations.
+ *
+ * \param[in] aad  Additional Authentication Data: First byte of packet header after applying the bit mask
+ *                 Note: For BT 4.2 this is 0xE3. For 5.2 it depends on the packet type.
+ * \param[in] packet_payload_len  Unencrypted packet payload length (i.e. *not* including header and MIC)
+ * \param[in] packet_payload_and mic  Pointer to the packet payload (with MIC if any) to be decrypted (packet_payload_len (+ MIC_LEN) bytes)
+ * \param[in] sk  Session key (KEY_LEN bytes, BIG-ENDIAN)
+ * \param[in] ccm_nonce  CCM Nonce (NONCE_LEN bytes, little-endian)
+ * \param[in] no_mic  Set to 1 if packet to be decrypted does not include a MIC, otherwise 0
+ *
+ * \param[out] decrypted_packet_payload Pointer to a buffer where the resulting decrypted payload will be stored
+ *             (packet_payload_len bytes). The caller must allocate it.
+ *
+ * \return Returns 1 if MIC is ok, else 0
+ */
+int blecrypt_packet_decrypt_v2(
+    uint8_t aad,
+    int packet_payload_len,
+    const uint8_t *packet_payload_and_mic,
+    const uint8_t *sk,
+    const uint8_t *ccm_nonce,
+    int no_mic,
+    uint8_t *decrypted_packet_payload)
 {
     int outlen, ok;
-    // Set cyphertext pointer to start of input packet payload
+    // Set ciphertext pointer to start of input packet payload
     const uint8_t *ct = packet_payload_and_mic;
     // Set plaintext pointer to start of decrypted packet payload
     uint8_t *pt = decrypted_packet_payload;
-    // Set additional authenticated data (AAD) to first byte of packet header with NESN = SN = MD = 0
-    uint8_t aad = packet_1st_header_byte & 0xE3;
-    int aad_len = 1;
-    // Allocate new cypher context
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();;
+    const int aad_len = 1; //Length of the Additional Authentication Data as per BT spec
+    // Allocate new cipher context
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     // Set cipher type to 128-bit AES, and mode to CCM (Counter with CBC-MAC)
     EVP_DecryptInit(ctx, EVP_aes_128_ccm(), NULL, NULL);
     // Set nonce length (because it is different from the 96-bit default)
     EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, NONCE_LEN, NULL);
-    // Set hack flag indicating whether packet has MIC (standard BLE) or not (LEAS encryption mode 2)
+    // Set hack flag indicating whether packet has MIC (standard BLE) or not
     EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_IGNORE_TAG, no_mic, NULL);
+
     if (no_mic)
     {
         /* Set dummy MIC (a.k.a. tag) value to prevent complaints from OpenSSL */
@@ -118,13 +198,13 @@ int blecrypt_packet_decrypt(                        // Returns 1 if MIC is ok, e
     }
     // Set decryption key and initialization vector (nonce)
     EVP_DecryptInit(ctx, NULL, sk, ccm_nonce);
-    // Set cyphertext length (needed because AAD is used)
+    // Set ciphertext length (needed because AAD is used)
     EVP_DecryptUpdate(ctx, NULL, &outlen, NULL, packet_payload_len);
     // Provide AAD (addition authenticated data)
     EVP_DecryptUpdate(ctx, NULL, &outlen, &aad, aad_len);
-    // Decrypt cyphertext to plaintext and verify MIC (also return number of decrypted bytes in outlen)
+    // Decrypt ciphertext to plaintext and verify MIC (also return number of decrypted bytes in outlen)
     ok = EVP_DecryptUpdate(ctx, pt, &outlen, ct, packet_payload_len);
-    // Free cypher context
+    // Free cipher context
     EVP_CIPHER_CTX_free(ctx);
     return ok;
 }

@@ -72,6 +72,23 @@ int blecrypt_packet_decrypt(                        // Returns 1 if MIC is ok, e
     // Outputs (the pointers themselves are inputs and must point to large enough areas)
     uint8_t *decrypted_packet_payload);             // Resulting decrypted payload (packet_payload_len bytes)
 
+void blecrypt_packet_encrypt_v2(
+    uint8_t aad,
+    int packet_payload_len,
+    const uint8_t *packet_payload,
+    const uint8_t *sk,
+    const uint8_t *ccm_nonce,
+    uint8_t *encrypted_packet_payload_and_mic);
+
+int blecrypt_packet_decrypt_v2(
+    uint8_t aad,
+    int packet_payload_len,
+    const uint8_t *packet_payload_and_mic,
+    const uint8_t *sk,
+    const uint8_t *ccm_nonce,
+    int no_mic,
+    uint8_t *decrypted_packet_payload);
+
 // Reverses byte order of data
 void blecrypt_reverse_byte_order(const uint8_t *in_data, uint8_t *out_data, int len);
 

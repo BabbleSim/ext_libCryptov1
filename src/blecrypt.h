@@ -89,6 +89,29 @@ int blecrypt_packet_decrypt_v2(
     int no_mic,
     uint8_t *decrypted_packet_payload);
 
+void blecrypt_packet_encrypt_v3(
+    uint8_t *adata,
+    int alen,
+    int mlen,
+    int maclen,
+    int noncelen,
+    const uint8_t *mdata,
+    const uint8_t *sk,
+    const uint8_t *ccm_nonce,
+    uint8_t *encrypted_packet_payload_and_mac);
+
+int blecrypt_packet_decrypt_v3(
+  uint8_t *adata,
+  int alen,
+  int mlen,
+  int maclen,
+  int noncelen,
+  const uint8_t *mdata_and_mac,
+  const uint8_t *sk,
+  const uint8_t *ccm_nonce,
+  int no_mac,
+  uint8_t *decrypted_packet_payload);
+
 // Reverses byte order of data
 void blecrypt_reverse_byte_order(const uint8_t *in_data, uint8_t *out_data, int len);
 

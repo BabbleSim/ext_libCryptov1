@@ -35,6 +35,33 @@ void blecrypt_aes_128(
     EVP_CIPHER_CTX_free(ctx);
 }
 
+// Performs simple AES-128/192/256 encryption of 128-bit data.
+void blecrypt_aes_ecb(
+    // Inputs
+    const uint8_t *key_be,                          // Key (KEY_LEN bytes, BIG-ENDIAN)
+    size_t key_size,                                // Key size in bits (only 128, 192 and 256 are supported)
+    const uint8_t *plaintext_data_be,               // Plaintext data (128bits, BIG-ENDIAN)
+    // Outputs (the pointers themselves are inputs and must point to large enough areas)
+    uint8_t *encrypted_data_be)                     // Encrypted data (128bits, BIG-ENDIAN)
+{
+    // Create OpenSSL cypher context
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    // Set cipher type to AES-128, mode to ECB ("Electronic Codebook": simple independent encryption of blocks),
+    // and provide encryption key
+    if (key_size == 128) {
+      EVP_EncryptInit(ctx, EVP_aes_128_ecb(), key_be, NULL);
+    } else if (key_size == 192) {
+      EVP_EncryptInit(ctx, EVP_aes_192_ecb(), key_be, NULL);
+    } else if (key_size == 256) {
+      EVP_EncryptInit(ctx, EVP_aes_256_ecb(), key_be, NULL);
+    }
+    // Encrypt plaintext data and put result in encrypted_data_be and length in outlen
+    int outlen;
+    EVP_EncryptUpdate(ctx, encrypted_data_be, &outlen, plaintext_data_be, SKD_LEN);
+    // Free cipher context
+    EVP_CIPHER_CTX_free(ctx);
+}
+
 // Encrypts payload of one packet and appends MIC.
 // Encrypted and unencrypted packet payloads must reside at different (non-overlapping) locations.
 void blecrypt_packet_encrypt(
